@@ -9,6 +9,8 @@
 
 - Webデモの実装は `web/` フォルダ。ビルド不要の静的サイト（index.html 起点）、データは localStorage。
 - 技術設計の正本は `specs/05_技術設計.md`（Webデモ版とAndroid版の共通仕様／差分を定義）。
+- アートスタイルの正本は `specs/06_アートスタイル仕様.md`（和紙と墨UI＋32×48ドット3頭身キャラ）。
+- 公開先：https://unagisv.github.io/ayutsugi/ （GitHub Pages・gh-pages ブランチ配信）。デプロイは `tools/deploy-pages.ps1`。リポジトリは https://github.com/unagisv/ayutsugi （Public）。
 
 ## 最重要ルール：仕様書が正
 
