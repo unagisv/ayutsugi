@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>歩継ぎ ドット絵プロトタイプ v2（24×32）</title>
+<title>歩継ぎ ドット絵プロトタイプ v3（32×48・3頭身・体型可変）</title>
 <style>
   body { background:#3a3a3a; color:#eee; font-family:monospace; padding:16px; }
   .row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:18px; }
@@ -13,12 +13,14 @@
 </style>
 </head>
 <body>
-<h1 style="font-size:16px">キャラ試作 v2 ― 24×32ドット 2頭身（パーツ合成）</h1>
+<h1 style="font-size:16px">キャラ試作 v3 ― 32×48ドット 約3頭身（体型5段階×パーツ合成）</h1>
 <div id="out"></div>
 <script>
-// ── ドット絵エンジン：半分定義（12文字）→左右ミラー＋座標パッチ ──────
-// 凡例: .=透明 K=輪郭 H=髪 S=肌 s=肌影 E=目 C=服 c=服影 B=帯 W=襟/白 F=袴/靴 G=金 R=赤飾り
+// ── エンジン：半分定義（16文字）→左右ミラー＋パラメトリック胴体 ──────
+// 凡例: .=透明 K=輪郭 H=髪 S=肌 s=肌影 E=目 C=服 c=服影 B=帯 W=襟/白 F=袴/ズボン/靴 G=金 R=赤飾り
+const HALF = 16;
 function mirror(half) { return half + half.split('').reverse().join(''); }
+function lerp(a, b, t) { return a + (b - a) * t; }
 
 const PAL = {
   K:'#33241a', S:'#f2cfa4', s:'#dba87e', E:'#2a1c12',
@@ -31,133 +33,169 @@ const TIERS = {
   '立派': { C:'#8c3b34', c:'#6e2c27', B:'#d9b13f' },
 };
 
-// ── 髪型（r0-r7 の半行8つ＋サイド深さ＋ミラー後パッチ）──────────────
+// ── 頭部（rows 0-15・半行16文字）────────────────────────────
+const TOP_STD = [
+  '..........KKKKKK', '.........KHHHHHH', '........KHHHHHHH', '........KHHHHHHH',
+  '........KHHHHHHH', '........KHHHHHHH', '........KHHSSSSS', '........KHSSSSSS'];
 const HAIRS = {
-  short: { side: 10, top: [
-    '....KKKKKKKK', '...KHHHHHHHH', '..KHHHHHHHHH', '.KHHHHHHHHHH',
-    '.KHHHHHHHHHH', 'KHHHHHHHHHHH', 'KHHHSSSSSSSS', 'KHHSSSSSSSSS'] },
-  spiky: { side: 9, top: [
-    '....KK.KK.KK', '...KHHKHHKHH', '..KHHHHHHHHH', '.KHHHHHHHHHH',
-    '.KHHHHHHHHHH', 'KHHHHHHHHHHH', 'KHHSHSHSHSHS', 'KHHSSSSSSSSS'] },
-  bob: { side: 13, wide: true, top: [
-    '....KKKKKKKK', '...KHHHHHHHH', '..KHHHHHHHHH', '.KHHHHHHHHHH',
-    '.KHHHHHHHHHH', 'KHHHHHHHHHHH', 'KHHHHHHHHHHH', 'KHHHSSSSSSSS'] },
-  long: { side: 15, top: [
-    '....KKKKKKKK', '...KHHHHHHHH', '..KHHHHHHHHH', '.KHHHHHHHHHH',
-    '.KHHHHHHHHHH', 'KHHHHHHHHHHH', 'KHHHSSSSSSSS', 'KHHSSSSSSSSS'],
-    post: [[16,2,'H'],[16,3,'H'],[17,2,'H'],[17,3,'H'],[18,2,'H'],[18,3,'H'],[19,2,'H'],[19,3,'H'],
-           [20,3,'H'],[21,3,'H'],[16,20,'H'],[16,21,'H'],[17,20,'H'],[17,21,'H'],[18,20,'H'],[18,21,'H'],
-           [19,20,'H'],[19,21,'H'],[20,20,'H'],[21,20,'H']] },
-  ponytail: { side: 10, top: [
-    '....KKKKKKKK', '...KHHHHHHHH', '..KHHHHHHHHH', '.KHHHHHHHHHH',
-    '.KHHHHHHHHHH', 'KHHHHHHHHHHH', 'KHHHSSSSSSSS', 'KHHSSSSSSSSS'],
-    post: [[2,20,'H'],[2,21,'H'],[3,21,'H'],[3,22,'H'],[4,21,'H'],[4,22,'H'],[5,22,'H'],[5,23,'H'],
-           [6,22,'H'],[6,23,'H'],[7,22,'H'],[7,23,'H'],[8,22,'H'],[8,23,'H'],[9,22,'H'],[9,23,'H'],
-           [10,22,'H'],[10,23,'H'],[11,21,'H'],[11,22,'H'],[12,21,'H'],[12,22,'H'],[13,21,'H'],[14,21,'H'],[15,21,'H']] },
-  twintail: { side: 11, top: [
-    '....KKKKKKKK', '...KHHHHHHHH', '..KHHHHHHHHH', '.KHHHHHHHHHH',
-    '.KHHHHHHHHHH', 'KHHHHHHHHHHH', 'KHHHSSSSSSSS', 'KHHSSSSSSSSS'],
-    post: [[8,0,'H'],[9,0,'H'],[10,0,'H'],[11,0,'H'],[12,0,'H'],[13,0,'H'],[14,0,'H'],[15,0,'H'],
-           [15,1,'H'],[16,0,'H'],[16,1,'H'],[17,1,'H'],[17,2,'H'],[18,2,'H'],
-           [8,23,'H'],[9,23,'H'],[10,23,'H'],[11,23,'H'],[12,23,'H'],[13,23,'H'],[14,23,'H'],[15,23,'H'],
-           [15,22,'H'],[16,23,'H'],[16,22,'H'],[17,22,'H'],[17,21,'H'],[18,21,'H']] },
-  bun: { side: 10, top: [
-    '.HHH.KKKKKKK', '.HHHKHHHHHHH', '.HHHKHHHHHHH', '.KHHHHHHHHHH',
-    '.KHHHHHHHHHH', 'KHHHHHHHHHHH', 'KHHHSSSSSSSS', 'KHHSSSSSSSSS'] },
-  mage: { side: 9, top: [
-    '..........HH', '.....KKKKKHH', '...KKSSSSSSS', '.KHSSSSSSSSS',
-    '.KHSSSSSSSSS', 'KHHSSSSSSSSS', 'KHHHSSSSSSSS', 'KHHSSSSSSSSS'] },
-  bald: { side: -1, top: [
-    '............', '....KKKKKKKK', '...KSSSSSSSS', '..KSSSSSSSSS',
-    '.KSSSSSSSSSS', 'KSSSSSSSSSSS', 'KSSSSSSSSSSS', 'KSSSSSSSSSSS'] },
+  short:    { side: 10, top: TOP_STD },
+  spiky:    { side: 9, top: [
+    '..........KK.KK.', '.........KHHKHHK', '........KHHHHHHH', '........KHHHHHHH',
+    '........KHHHHHHH', '........KHHHHHHH', '........KHSHSHSH', '........KHSSSSSS'] },
+  bob:      { side: 12, wide: true, top: [
+    '..........KKKKKK', '.........KHHHHHH', '........KHHHHHHH', '........KHHHHHHH',
+    '........KHHHHHHH', '........KHHHHHHH', '........KHHHHHHH', '........KHHSSSSS'] },
+  long:     { side: 13, top: TOP_STD,
+    post: [[14,9,'H'],[14,10,'H'],[15,9,'H'],[15,10,'H'],[16,8,'H'],[16,9,'H'],[17,8,'H'],[17,9,'H'],
+           [18,8,'H'],[18,9,'H'],[19,8,'H'],[20,8,'H'],
+           [14,21,'H'],[14,22,'H'],[15,21,'H'],[15,22,'H'],[16,22,'H'],[16,23,'H'],[17,22,'H'],[17,23,'H'],
+           [18,22,'H'],[18,23,'H'],[19,23,'H'],[20,23,'H']] },
+  ponytail: { side: 10, top: TOP_STD,
+    post: [[1,22,'H'],[2,22,'H'],[2,23,'H'],[3,23,'H'],[4,23,'H'],[4,24,'H'],[5,24,'H'],[6,24,'H'],
+           [7,24,'H'],[8,24,'H'],[9,24,'H'],[10,24,'H'],[11,23,'H'],[12,23,'H'],[13,23,'H'],[14,22,'H'],[15,22,'H']] },
+  twintail: { side: 11, top: TOP_STD,
+    post: [[8,8,'H'],[9,8,'H'],[10,8,'H'],[11,8,'H'],[12,8,'H'],[13,8,'H'],[14,8,'H'],[15,8,'H'],[16,7,'H'],[17,7,'H'],
+           [8,23,'H'],[9,23,'H'],[10,23,'H'],[11,23,'H'],[12,23,'H'],[13,23,'H'],[14,23,'H'],[15,23,'H'],[16,24,'H'],[17,24,'H']] },
+  bun:      { side: 10, top: [
+    '........HH.KKKKK', '........HHKHHHHH', '........KHHHHHHH', '........KHHHHHHH',
+    '........KHHHHHHH', '........KHHHHHHH', '........KHHSSSSS', '........KHSSSSSS'] },
+  mage:     { side: 9, top: [
+    '..............HH', '...........KKKHH', '..........KSSSSS', '........KKSSSSSS',
+    '........KHSSSSSS', '........KHSSSSSS', '........KHSSSSSS', '........KHSSSSSS'] },
+  bald:     { side: -1, top: [
+    '................', '..........KKKKKK', '.........KSSSSSS', '........KSSSSSSS',
+    '........KSSSSSSS', '........KSSSSSSS', '........KSSSSSSS', '........KSSSSSSS'] },
 };
-
-// ── 顔（r8-r15）：表情＝目と口もと ──────────────────────────────
 function faceRows(eyes) {
   const e1 = eyes === 'sad' ? 'S' : 'E';
   const e2 = eyes === 'happy' ? 'S' : 'E';
   return [
-    'KHSSSSSSSSSS',                        // r8
-    'KHSSSS' + e1 + e1 + 'SSSS',           // r9 目（上）cols6-7
-    'KHSSSS' + e2 + e2 + 'SSSS',           // r10 目（下）
-    '.KSSSSSSSSSS',                        // r11
-    '.KSSSSSSSSSS',                        // r12（頬・blushパッチ位置）
-    '..KSSSSSSSSS',                        // r13（口もとパッチ位置）
-    '...KSSSSSSSS',                        // r14
-    '....KKKKKKKK',                        // r15 あご
+    '........KHSSSSSS',                 // r8
+    '........KHSS' + e1 + 'SSS',        // r9 目（上）col12
+    '........KHSS' + e2 + 'SSS',        // r10
+    '.........KSSSSSS',                 // r11
+    '.........KSSSSSS',                 // r12（口もと中央 cols15-16）
+    '..........KSSSSS',                 // r13 あご
+    '............KSSS',                 // r14 首
+    '............KSSS',                 // r15 首
   ];
 }
 const FACE_PATCH = {
-  normal: [[13,11,'s'],[13,12,'s']],
-  happy:  [[13,10,'K'],[13,13,'K'],[12,4,'s'],[12,19,'s']],
-  sad:    [[13,11,'K'],[13,12,'K']],
+  normal: [[12,15,'s'],[12,16,'s']],
+  happy:  [[12,14,'K'],[12,17,'K'],[11,11,'s'],[11,20,'s']],
+  sad:    [[12,15,'K'],[12,16,'K']],
 };
 
-// ── 服装（r16-r31 の半行16）─────────────────────────────────
-const OUTFIT_FORMS = {
-  kimono: [
-    '....KCCCCCWW', '...KCCCCCCWW', '...KCCCCCCCW', '...KCCCCCCCC',
-    '...KCCCCCCCC', '...KCCCCCCCC', '...KSCCCCCCC', '...KBBBBBBBB',
-    '...KBBBBBBBB', '...KCCCCCCCC', '...KCCCCCCCC', '...KcCCCCCCC',
-    '...KcCCCCCCC', '....KKKKKKKK', '.....KFF....', '.....KKK....'],
-  shima: [
-    '....KCCCCCWW', '...KCCCCCCWW', '...KCcCCcCCW', '...KCcCCcCCc',
-    '...KCcCCcCCc', '...KCcCCcCCc', '...KScCCcCCc', '...KBBBBBBBB',
-    '...KBBBBBBBB', '...KCcCCcCCc', '...KCcCCcCCc', '...KCcCCcCCc',
-    '...KCcCCcCCc', '....KKKKKKKK', '.....KFF....', '.....KKK....'],
-  haori: [
-    '....KcCCCCWW', '...KcCCCCCWW', '...KcCCCCCWW', '...KcCCCCCWW',
-    '...KcCCCCCWW', '...KcCCCCCWW', '...KScCCCCWW', '...KcCCCCBBB',
-    '...KcCCCCBBB', '...KcCCCCCCC', '...KcCCCCCCC', '...KcCCCCCCC',
-    '...KcCCCCCCC', '....KKKKKKKK', '.....KFF....', '.....KKK....'],
-  montsuki: [
-    '....KcCCCCWW', '...KcCGCCCWW', '...KcCCCCCWW', '...KcCCCCCWW',
-    '...KcCCCCCWW', '...KcCCCCCWW', '...KScCCCCWW', '...KcCCCGBBB',
-    '...KcCCCGBBB', '...KcCCCCCCC', '...KcCCCCCCC', '...KcCCCCCCC',
-    '...KcCCCCCCC', '....KKKKKKKK', '.....KFF....', '.....KKK....'],
-  samue: [
-    '....KCCCCCWW', '...KCCCCCCCW', '...KCCCCCCCC', '...KCCCCCCCC',
-    '...KCCCCCCCC', '...KCCCCCCCC', '...KSCCCCCCC', '...KBBBBBBBB',
-    '...KCCCCCCCC', '....KFFFFFFF', '....KFFFFFFF', '.....KFF....',
-    '.....KFF....', '.....KFF....', '.....KFF....', '.....KKK....'],
-  shirt: [
-    '....KCCCCCWW', '...KCCCCCCCW', '...KCCCCCCCC', '...KCCCCCCCC',
-    '...KCCCCCCCC', '...KCCCCCCCC', '...KSCCCCCCC', '...KCCCCCCCC',
-    '....KBBBBBBB', '....KFFFFFFF', '....KFFFFFFF', '.....KFF....',
-    '.....KFF....', '.....KFF....', '.....KFF....', '.....KKK....'],
+// ── 胴体：体型5段階（02 §6-2 fit_score）×服装6形状 ──────────────
+// hw＝中心から外輪郭までの半幅。体型で肩・胴回り・脚の太さ・姿勢が変わる。
+const FITS = {
+  1: { sh: 6, belly: 11, hip: 10, hem: 9, leg: 5, slump: true }, // 猫背・運動不足体型
+  2: { sh: 7, belly: 9,  hip: 9,  hem: 7, leg: 4 },              // 標準やや下
+  3: { sh: 7, belly: 7,  hip: 8,  hem: 6, leg: 3 },              // 標準
+  4: { sh: 7, belly: 6,  hip: 7,  hem: 6, leg: 3 },              // 引き締まった体型
+  5: { sh: 8, belly: 5,  hip: 7,  hem: 5, leg: 3 },              // 健脚・矍鑠
 };
+function trow(hw, fill, inner) {
+  // 半行を生成：透明＋輪郭K＋中身。inner=[col,key]で上書き
+  let s = '.'.repeat(HALF - hw) + 'K' + fill.repeat(hw - 1);
+  for (const [c, k] of inner ?? []) {
+    const i = HALF - hw + c;
+    if (i > 0 && i < HALF) s = s.slice(0, i) + k + s.slice(i + 1);
+  }
+  return s;
+}
+// 胴体 rows16-47（32行）。和装は裾で脚が隠れ、洋装・野良着は脚が見える。
+function bodyRows(fit, outfit) {
+  const P = FITS[fit];
+  const rows = [];
+  const slump = P.slump;
+  // 肩 r16-17（猫背は肩が落ちて丸い）
+  rows.push(trow(P.sh - (slump ? 2 : 1), 'C'));
+  rows.push(trow(P.sh - (slump ? 1 : 0), 'C'));
+  // 胸〜腹 r18-25（肩→腹回りへ素早く膨らませ、体型差を強調する）
+  for (let i = 0; i < 8; i++) {
+    const hw = Math.round(lerp(P.sh, P.belly, Math.min(1, (i + 1) / 5)));
+    rows.push(trow(hw, 'C'));
+  }
+  // 腰 r26-27（帯/ベルト）
+  rows.push(trow(P.belly, 'B'));
+  rows.push(trow(Math.round(lerp(P.belly, P.hip, 0.5)), outfit === 'shirt' ? 'F' : 'B'));
+  if (outfit === 'samue' || outfit === 'shirt') {
+    // ズボン r28-33 → 脚 r34-45（体型で脚の太さが変わる）
+    for (let i = 0; i < 6; i++) rows.push(trow(Math.round(lerp(P.hip, P.leg + 3, (i + 1) / 6)), 'F'));
+    for (let i = 0; i < 10; i++) rows.push('.'.repeat(HALF - P.leg - 2) + 'K' + 'F'.repeat(P.leg) + '..');
+    rows.push('.'.repeat(HALF - P.leg - 3) + 'K' + 'F'.repeat(P.leg + 1) + '..');  // r44 靴
+    rows.push('.'.repeat(HALF - P.leg - 3) + 'K'.repeat(P.leg + 2) + '..');        // r45
+    rows.push('.'.repeat(HALF));                                                   // r46-47 余白
+    rows.push('.'.repeat(HALF));
+  } else {
+    // 着物の裾 r28-43（腰→裾。太い体型は裾まで太く、細い体型はすっきり）
+    for (let i = 0; i < 16; i++) rows.push(trow(Math.round(lerp(P.hip, P.hem, (i + 1) / 16)), 'C'));
+    rows.push(trow(P.hem, 'K'));                                                   // r44 裾線
+    rows.push('.'.repeat(HALF - 5) + 'KFF' + '..');                                // r45 足
+    rows.push('.'.repeat(HALF - 5) + 'KKK' + '..');                                // r46
+    rows.push('.'.repeat(HALF));                                                   // r47
+  }
+  return rows;
+}
+// 服の柄・襟をパッチで重ねる（ミラー後の絶対座標で中央基準）
+function outfitPatches(fit, outfit) {
+  const P = FITS[fit];
+  const p = [];
+  const L = 16, R = 15; // 中央2列＝cols15-16
+  // 襟元V（白）：和装・洋装共通
+  p.push([16,14,'W'],[16,17,'W'],[17,14,'W'],[17,17,'W'],[18,15,'W'],[18,16,'W']);
+  if (outfit === 'haori' || outfit === 'montsuki') {
+    for (let r = 17; r <= 25; r++) { p.push([r,14,'W'],[r,17,'W']); }   // 羽織の前合わせ
+    const e = 16 - P.sh;
+    for (let r = 18; r <= 26; r++) { p.push([r, e + 1, 'c'], [r, 31 - e - 1, 'c']); } // 羽織の外縁影
+  }
+  if (outfit === 'montsuki') p.push([19,15,'G'],[19,16,'G'],[20,15,'G'],[20,16,'G']); // 胸の紋
+  if (outfit === 'shima') {
+    for (let r = 18; r <= 43; r++) if (r !== 26 && r !== 27) {
+      p.push([r,12,'c'],[r,19,'c']);
+      if (r >= 20) p.push([r,15,'c'],[r,16,'c']);
+    }
+  }
+  // 腕の分かれ目（影）：胸〜腰
+  const edge = 16 - Math.round(lerp(P.sh, P.belly, 0.5));
+  for (let r = 19; r <= 25; r++) { p.push([r, edge + 1, 'c'], [r, 30 - edge, 'c']); }
+  // 手（袖口の肌色）
+  p.push([26, edge, 'S'], [26, 31 - edge, 'S']);
+  return p;
+}
 
-// 子ども（頭はそのまま・胴8行＝24×24）
-const CHILD_BODY = [
-  '....KCCCCCWW', '...KCCCCCCCC', '...KSCCCCCCC', '...KBBBBBBBB',
-  '...KCCCCCCCC', '....KKKKKKKK', '.....KFF....', '.....KKK....'];
-
-// ── アクセサリ（ミラー後の絶対座標パッチ）──────────────────────
+// ── アクセサリ（ミラー後の絶対座標）──────────────────────────
 const ACCESSORIES = {
-  kanzashi: [[1,16,'G'],[0,17,'G'],[1,18,'G'],[2,19,'G'],[1,17,'G']],
-  ribbon: [[0,16,'R'],[0,19,'R'],[1,16,'R'],[1,17,'R'],[1,18,'R'],[1,19,'R'],[2,17,'R'],[2,18,'R']],
-  hachimaki: Array.from({length:20}, (_,i)=>[5,i+2,'W']).concat([[6,1,'W'],[6,22,'W']]),
-  cane: [[18,21,'G'],[18,22,'G'],[19,22,'F'],[20,22,'F'],[21,22,'F'],[22,22,'F'],[23,22,'F'],
-         [24,22,'F'],[25,22,'F'],[26,22,'F'],[27,22,'F'],[28,22,'F'],[29,22,'F'],[22,21,'S']],
-  beard: [[13,9,'H'],[13,10,'H'],[13,11,'H'],[13,12,'H'],[13,13,'H'],[13,14,'H'],
-          [14,8,'H'],[14,9,'H'],[14,10,'H'],[14,11,'H'],[14,12,'H'],[14,13,'H'],[14,14,'H'],[14,15,'H'],
-          [15,9,'H'],[15,10,'H'],[15,11,'H'],[15,12,'H'],[15,13,'H'],[15,14,'H']],
+  kanzashi: [[1,21,'G'],[0,22,'G'],[2,23,'G'],[1,22,'G']],
+  ribbon: [[0,20,'R'],[0,23,'R'],[1,20,'R'],[1,21,'R'],[1,22,'R'],[1,23,'R'],[2,21,'R'],[2,22,'R']],
+  hachimaki: Array.from({length:14}, (_,i)=>[5,i+9,'W']).concat([[6,8,'W'],[6,23,'W']]),
+  cane: [[26,25,'G'],[26,26,'G'],[27,26,'F'],[28,26,'F'],[29,26,'F'],[30,26,'F'],[31,26,'F'],[32,26,'F'],
+         [33,26,'F'],[34,26,'F'],[35,26,'F'],[36,26,'F'],[37,26,'F'],[38,26,'F'],[39,26,'F'],[40,26,'F'],
+         [41,26,'F'],[42,26,'F'],[43,26,'F'],[44,26,'F'],[27,25,'S']],
+  beard: [[12,13,'H'],[12,14,'H'],[12,17,'H'],[12,18,'H'],
+          [13,12,'H'],[13,13,'H'],[13,14,'H'],[13,15,'H'],[13,16,'H'],[13,17,'H'],[13,18,'H'],[13,19,'H'],
+          [14,13,'H'],[14,14,'H'],[14,15,'H'],[14,16,'H'],[14,17,'H'],[14,18,'H'],
+          [15,14,'H'],[15,15,'H'],[15,16,'H'],[15,17,'H']],
 };
 
-function buildRows({hair='short', eyes='normal', outfit='kimono', age='adult'}) {
+function buildRows({hair='short', eyes='normal', fit=3, outfit='kimono', age='adult'}) {
   const hc = HAIRS[hair];
   const head = [...hc.top, ...faceRows(eyes)];
-  // サイドの髪：r8以降の col1（bobはcol2も）を H に
-  for (let r = 8; r <= Math.min(hc.side, 14); r++) {
-    if (head[r][1] === 'K' || head[r][1] === 'S') {
-      head[r] = head[r][0] + 'H' + head[r].slice(2);
-    } else if (head[r][0] === '.') {
-      head[r] = '.H' + head[r].slice(2);
+  for (let r = 8; r <= Math.min(hc.side, 13); r++) {
+    if (head[r][8] === 'K' || head[r][9] === 'K') {
+      head[r] = head[r].slice(0, 8) + 'KH' + head[r].slice(10);
+    } else if (head[r][9] === 'K') {
+      head[r] = head[r].slice(0, 9) + 'H' + head[r].slice(10);
     }
-    if (hc.wide && r <= 11) head[r] = head[r].slice(0, 2) + 'H' + head[r].slice(3);
+    if (hc.wide && r <= 11) head[r] = head[r].slice(0, 10) + 'H' + head[r].slice(11);
   }
-  const body = age === 'child' ? CHILD_BODY : OUTFIT_FORMS[outfit];
-  return [...head, ...body].map(mirror);
+  let body = bodyRows(fit, outfit);
+  if (age === 'child') {
+    // 子ども：胴・裾を約2/3に間引いて全高36
+    body = body.filter((_, i) => i % 3 !== 1).slice(0, 20);
+  }
+  return [...head.map(mirror), ...body.map(mirror)];
 }
 
 function drawSprite(rows, pal, patches, scale) {
@@ -166,7 +204,8 @@ function drawSprite(rows, pal, patches, scale) {
   cv.width = w * scale; cv.height = h * scale;
   const ctx = cv.getContext('2d');
   const grid = rows.map(r => r.split(''));
-  for (const [r, c, k] of patches) if (grid[r] && grid[r][c] !== undefined) grid[r][c] = k;
+  for (const [r, c, k] of patches) if (grid[r] && grid[r][c] !== undefined && grid[r][c] !== '.') grid[r][c] = k;
+  for (const [r, c, k] of patches) if (grid[r] && grid[r][c] === '.' && (k === 'H' || k === 'F' || k === 'G' || k === 'R' || k === 'S' || k === 'W')) grid[r][c] = k;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const k = grid[y][x];
     if (k === '.') continue;
@@ -179,6 +218,7 @@ function drawSprite(rows, pal, patches, scale) {
 function make(opts) {
   const pal = { ...PAL, H: HAIR_COLORS[opts.hairColor ?? 'black'], ...TIERS[opts.tier ?? '標準'] };
   let patches = [...FACE_PATCH[opts.eyes ?? 'normal'], ...(HAIRS[opts.hair ?? 'short'].post ?? [])];
+  if (opts.age !== 'child') patches = patches.concat(outfitPatches(opts.fit ?? 3, opts.outfit ?? 'kimono'));
   if (opts.age === 'elder') { pal.H = HAIR_COLORS.white; patches = patches.concat(ACCESSORIES.beard); }
   for (const a of opts.acc ?? []) patches = patches.concat(ACCESSORIES[a]);
   return drawSprite(buildRows(opts), pal, patches, opts.scale ?? 4);
@@ -197,7 +237,14 @@ function show(title, items) {
 }
 
 // ── 表示 ──────────────────────────────────────────
-show('髪型 9種（標準着物）', [
+show('体型5段階（02 §6-2：歩かないと太り、歩くと引き締まる）', [
+  { cv: make({fit:1}), label: 'Lv1 運動不足' },
+  { cv: make({fit:2}), label: 'Lv2 やや下' },
+  { cv: make({fit:3}), label: 'Lv3 標準' },
+  { cv: make({fit:4}), label: 'Lv4 引き締まり' },
+  { cv: make({fit:5}), label: 'Lv5 健脚' },
+]);
+show('髪型 9種', [
   { cv: make({hair:'short'}), label: '短髪' },
   { cv: make({hair:'spiky', hairColor:'brown'}), label: 'つんつん' },
   { cv: make({hair:'bob', hairColor:'chestnut'}), label: 'おかっぱ' },
@@ -210,31 +257,24 @@ show('髪型 9種（標準着物）', [
 ]);
 show('服装 6形状 × 財産3段階の色', [
   { cv: make({outfit:'samue', tier:'質素'}), label: '野良着（質素）' },
-  { cv: make({outfit:'kimono', tier:'標準'}), label: '着物' },
-  { cv: make({outfit:'shima', tier:'標準'}), label: '縞の着物' },
-  { cv: make({outfit:'shirt', tier:'標準'}), label: '洋装' },
+  { cv: make({outfit:'kimono'}), label: '着物' },
+  { cv: make({outfit:'shima'}), label: '縞の着物' },
+  { cv: make({outfit:'shirt'}), label: '洋装' },
   { cv: make({outfit:'haori', tier:'立派'}), label: '羽織' },
   { cv: make({outfit:'montsuki', tier:'立派'}), label: '紋付（豪華）' },
 ]);
-show('人生ステージ', [
-  { cv: make({age:'child', tier:'質素'}), label: '幼少期(24×24)' },
-  { cv: make({hair:'short'}), label: '青年〜壮年' },
-  { cv: make({hair:'short', age:'elder', acc:['cane']}), label: '老年期' },
+show('人生ステージ・表情', [
+  { cv: make({age:'child', tier:'質素'}), label: '幼少期' },
+  { cv: make({}), label: '青年〜壮年' },
+  { cv: make({age:'elder', fit:2, acc:['cane']}), label: '老年期' },
+  { cv: make({eyes:'happy', fit:4}), label: 'いきいき' },
+  { cv: make({eyes:'sad', fit:2}), label: 'しょんぼり' },
 ]);
-show('表情（活力3段階）', [
-  { cv: make({eyes:'normal'}), label: 'ふつう' },
-  { cv: make({eyes:'happy'}), label: 'いきいき' },
-  { cv: make({eyes:'sad'}), label: 'しょんぼり' },
-]);
-show('アクセサリ（イベント・家宝由来）', [
+show('小物・倍率', [
   { cv: make({hair:'long', acc:['kanzashi']}), label: 'かんざし' },
-  { cv: make({hair:'twintail', hairColor:'chestnut', acc:['ribbon']}), label: 'リボン' },
   { cv: make({hair:'spiky', acc:['hachimaki']}), label: 'はちまき' },
-]);
-show('表示スケール比較', [
-  { cv: make({scale:3}), label: '×3 (72×96)' },
-  { cv: make({scale:4}), label: '×4' },
-  { cv: make({scale:6}), label: '×6' },
+  { cv: make({scale:2}), label: '×2（一覧）' },
+  { cv: make({scale:5, fit:5}), label: '×5（ホーム）' },
 ]);
 </script>
 </body>
