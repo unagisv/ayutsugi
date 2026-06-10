@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>歩継ぎ 素材アトリエ（取り込み・検証ツール）</title>
+<style>
+  body { background:#2e2e2e; color:#e8e8e8; font-family:system-ui, sans-serif; padding:16px; max-width:1100px; margin:0 auto; }
+  h1 { font-size:18px; } h2 { font-size:15px; border-bottom:1px solid #555; padding-bottom:4px; margin-top:28px; }
+  .panel { background:#3a3a3a; border-radius:8px; padding:14px; margin:10px 0; }
+  .row { display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start; }
+  canvas { image-rendering: pixelated; background:
+    repeating-conic-gradient(#4a4a4a 0% 25%, #3f3f3f 0% 50%) 0 0 / 16px 16px; border:1px solid #666; }
+  canvas.paper { background:#f0e7cf; }
+  label { font-size:13px; display:block; margin:6px 0 2px; color:#bbb; }
+  input[type=number], input[type=text] { width:90px; background:#2a2a2a; color:#eee; border:1px solid #555; border-radius:4px; padding:4px 6px; }
+  input[type=text].wide { width:260px; }
+  input[type=range] { width:160px; vertical-align:middle; }
+  button { background:#4a6e8a; color:#fff; border:none; border-radius:6px; padding:8px 14px; margin:6px 6px 0 0; cursor:pointer; font-size:13px; }
+  button.ghost { background:#555; }
+  .note { font-size:12px; color:#999; line-height:1.6; }
+  .val { font-size:12px; color:#ddd; }
+</style>
+</head>
+<body>
+<h1>🎨 素材アトリエ ― AI生成画像をゲーム規格（128×192・透過PNG）に変換する</h1>
+<p class="note">手順：A で各生成画像を規格化 → （髪・小物・表情は）B でベースとの差分を抽出 → C で重ねて確認 → 保存して web/assets/chars/ へ。規格は specs/06 §5。</p>
+
+<h2>A. 規格化（リサイズ・背景透過・位置合わせ）</h2>
+<div class="panel">
+  <input type="file" id="a-file" accept="image/*">
+  <div class="row" style="margin-top:8px">
+    <div>
+      <label>身長（出力px・おとな150目安）<input type="number" id="a-height" value="150" min="40" max="188"></label>
+      <label>背景除去の許容差 <input type="range" id="a-tol" min="0" max="120" value="40"><span class="val" id="a-tol-v">40</span></label>
+      <label>横位置補正 <input type="number" id="a-dx" value="0" min="-40" max="40"></label>
+      <label>縦位置補正 <input type="number" id="a-dy" value="0" min="-40" max="40"></label>
+      <button id="a-run">変換する</button>
+      <p class="note">背景は画像の外周から自動判定して透過します（外周と同系色のみ・服の白は残ります）。<br>足元は基準線 y=180 に揃います。</p>
+    </div>
+    <div><label>元画像</label><canvas id="a-src" width="200" height="200"></canvas></div>
+    <div><label>規格化結果（×2）</label><canvas id="a-out" width="256" height="384"></canvas></div>
+    <div>
+      <label>保存名（.png）</label>
+      <input type="text" class="wide" id="a-name" value="base_adult_f">
+      <br><button id="a-save">この結果を保存</button>
+      <button class="ghost" id="a-to-base">Bのベースにする</button>
+      <button class="ghost" id="a-to-var">Bの差分元にする</button>
+      <button class="ghost" id="a-to-layer">Cに重ねる</button>
+    </div>
+  </div>
+</div>
+
+<h2>B. 差分抽出（ベースと比べて変わった部分だけをレイヤー化）</h2>
+<div class="panel">
+  <div class="row">
+    <div>
+      <p class="note">A の結果を「Bのベースにする」「Bの差分元にする」で2枚セットしてください。<br>髪・表情・小物のレイヤー素材を作るための機能です。</p>
+      <label>差分のしきい値 <input type="range" id="b-tol" min="8" max="160" value="48"><span class="val" id="b-tol-v">48</span></label>
+      <label>対象範囲を顔まわりに限定 <input type="checkbox" id="b-head"> <span class="note">(y&lt;100のみ＝髪・表情用)</span></label>
+      <button id="b-run">差分を抽出</button>
+    </div>
+    <div><label>ベース（×1）</label><canvas id="b-base" width="128" height="192"></canvas></div>
+    <div><label>差分元（×1）</label><canvas id="b-var" width="128" height="192"></canvas></div>
+    <div><label>抽出レイヤー（×2）</label><canvas id="b-out" width="256" height="384"></canvas></div>
+    <div>
+      <label>保存名（.png）</label>
+      <input type="text" class="wide" id="b-name" value="hair_ponytail_front">
+      <br><button id="b-save">このレイヤーを保存</button>
+      <button class="ghost" id="b-to-layer">Cに重ねる</button>
+    </div>
+  </div>
+</div>
+
+<h2>C. 合成プレビュー（レイヤーを重ねて最終確認・髪色テスト）</h2>
+<div class="panel">
+  <div class="row">
+    <div>
+      <input type="file" id="c-file" accept="image/png" multiple>
+      <p class="note">規格化済みPNGを複数選ぶか、A/Bから送ってください。選んだ順に下から重なります。</p>
+      <label>髪色テスト（最後に追加したレイヤーへ適用）</label>
+      <div id="c-colors"></div>
+      <button class="ghost" id="c-clear">全部消す</button>
+    </div>
+    <div><label>合成結果（×2・和紙背景）</label><canvas id="c-out" class="paper" width="256" height="384"></canvas></div>
+    <div><label>レイヤー</label><ol id="c-list" class="note"></ol></div>
+  </div>
+</div>
+
+<script>
+const TW = 128, TH = 192, BASELINE = 180, CENTER = 64;
+const $ = s => document.querySelector(s);
+
+// ── 共通ユーティリティ ──────────────────────────────
+function loadFile(file) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = rej;
+    img.src = URL.createObjectURL(file);
+  });
+}
+function imageData(img, w, h) {
+  const cv = document.createElement('canvas');
+  cv.width = w ?? img.width; cv.height = h ?? img.height;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, cv.width, cv.height);
+  return ctx.getImageData(0, 0, cv.width, cv.height);
+}
+function blank(w, h) { return new ImageData(w, h); }
+function putScaled(canvas, data, scale) {
+  canvas.width = data.width * scale; canvas.height = data.height * scale;
+  const tmp = document.createElement('canvas');
+  tmp.width = data.width; tmp.height = data.height;
+  tmp.getContext('2d').putImageData(data, 0, 0);
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(tmp, 0, 0, canvas.width, canvas.height);
+}
+function colorDist(d, i, r, g, b) {
+  return Math.abs(d[i] - r) + Math.abs(d[i + 1] - g) + Math.abs(d[i + 2] - b);
+}
+function downloadPNG(data, name) {
+  const cv = document.createElement('canvas');
+  cv.width = data.width; cv.height = data.height;
+  cv.getContext('2d').putImageData(data, 0, 0);
+  const a = document.createElement('a');
+  a.href = cv.toDataURL('image/png');
+  a.download = name.endsWith('.png') ? name : name + '.png';
+  a.click();
+}
+
+// ── A. 規格化 ──────────────────────────────────────
+let aSrcImg = null, aResult = null;
+$('#a-tol').addEventListener('input', e => $('#a-tol-v').textContent = e.target.value);
+$('#a-file').addEventListener('change', async e => {
+  if (!e.target.files[0]) return;
+  aSrcImg = await loadFile(e.target.files[0]);
+  const sc = Math.min(200 / aSrcImg.width, 200 / aSrcImg.height);
+  putScaled($('#a-src'), imageData(aSrcImg), sc);
+  const guess = e.target.files[0].name.replace(/\.[^.]+$/, '');
+  $('#a-name').value = guess;
+  normalize();
+});
+['#a-height', '#a-tol', '#a-dx', '#a-dy'].forEach(s => $(s).addEventListener('change', normalize));
+$('#a-run').addEventListener('click', normalize);
+
+function normalize() {
+  if (!aSrcImg) return;
+  // 1) 元解像度のまま読み（巨大なら縮小）、外周色フラッドフィルで背景を透過
+  const maxSide = 1200;
+  const ds = Math.min(1, maxSide / Math.max(aSrcImg.width, aSrcImg.height));
+  const src = imageData(aSrcImg, Math.round(aSrcImg.width * ds), Math.round(aSrcImg.height * ds));
+  const { width: w, height: h, data: d } = src;
+  const tol = Number($('#a-tol').value) * 3;
+  // 外周のピクセル色を背景候補に（四隅＋辺の中点）
+  const seeds = [];
+  const pts = [[0,0],[w-1,0],[0,h-1],[w-1,h-1],[Math.floor(w/2),0],[Math.floor(w/2),h-1],[0,Math.floor(h/2)],[w-1,Math.floor(h/2)]];
+  const bgcols = pts.map(([x,y]) => { const i=(y*w+x)*4; return [d[i],d[i+1],d[i+2]]; });
+  const isBg = i => d[i+3] === 0 || bgcols.some(([r,g,b]) => colorDist(d, i, r, g, b) <= tol);
+  // フラッドフィル（外周からつながる背景のみ透過＝服の白は残す）
+  const mark = new Uint8Array(w * h);
+  const stack = [];
+  for (let x = 0; x < w; x++) { stack.push(x, x + (h - 1) * w); }
+  for (let y = 0; y < h; y++) { stack.push(y * w, y * w + w - 1); }
+  while (stack.length) {
+    const p = stack.pop();
+    if (mark[p]) continue;
+    if (!isBg(p * 4)) continue;
+    mark[p] = 1;
+    const x = p % w, y = (p / w) | 0;
+    if (x > 0) stack.push(p - 1);
+    if (x < w - 1) stack.push(p + 1);
+    if (y > 0) stack.push(p - w);
+    if (y < h - 1) stack.push(p + w);
+  }
+  for (let p = 0; p < w * h; p++) if (mark[p]) d[p * 4 + 3] = 0;
+  // 2) 前景のバウンディングボックス
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (d[(y * w + x) * 4 + 3] > 16) {
+      if (x < x0) x0 = x; if (x > x1) x1 = x;
+      if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+  }
+  if (x1 < 0) { alert('前景が見つかりません（許容差を下げてみてください）'); return; }
+  // 3) 身長を指定pxに合わせ最近傍サンプリングで 128×192 へ
+  const targetH = Number($('#a-height').value);
+  const scale = targetH / (y1 - y0 + 1);
+  const dx = Number($('#a-dx').value), dy = Number($('#a-dy').value);
+  const out = blank(TW, TH);
+  const od = out.data;
+  // 中心は「足元（下端10%）の前景の重心」基準：髪型などの左右非対称な差分でズレないように
+  let footSum = 0, footN = 0;
+  const footY0 = Math.max(y0, y1 - Math.round((y1 - y0) * 0.1));
+  for (let y = footY0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    if (d[(y * w + x) * 4 + 3] > 16) { footSum += x; footN++; }
+  }
+  const fgCx = footN > 0 ? footSum / footN : (x0 + x1 + 1) / 2;
+  for (let ty = 0; ty < TH; ty++) for (let tx = 0; tx < TW; tx++) {
+    // 出力(tx,ty) ← 元画像の対応点（足元を BASELINE・中心を CENTER に）
+    const sx = Math.round(fgCx + (tx - CENTER - dx) / scale);
+    const sy = Math.round(y1 - (BASELINE - ty - dy) / scale);
+    if (sx < x0 || sx > x1 || sy < y0 || sy > y1) continue;
+    const si = (sy * w + sx) * 4, oi = (ty * TW + tx) * 4;
+    if (d[si + 3] <= 16) continue;
+    od[oi] = d[si]; od[oi + 1] = d[si + 1]; od[oi + 2] = d[si + 2]; od[oi + 3] = 255;
+  }
+  aResult = out;
+  putScaled($('#a-out'), out, 2);
+}
+$('#a-save').addEventListener('click', () => { if (aResult) downloadPNG(aResult, $('#a-name').value); });
+
+// ── B. 差分抽出 ────────────────────────────────────
+let bBase = null, bVar = null, bResult = null;
+$('#b-tol').addEventListener('input', e => $('#b-tol-v').textContent = e.target.value);
+$('#a-to-base').addEventListener('click', () => { if (aResult) { bBase = cloneData(aResult); putScaled($('#b-base'), bBase, 1); } });
+$('#a-to-var').addEventListener('click', () => { if (aResult) { bVar = cloneData(aResult); putScaled($('#b-var'), bVar, 1); } });
+function cloneData(d) { return new ImageData(new Uint8ClampedArray(d.data), d.width, d.height); }
+$('#b-run').addEventListener('click', () => {
+  if (!bBase || !bVar) { alert('ベースと差分元の両方をセットしてください'); return; }
+  const tol = Number($('#b-tol').value) * 3;
+  const headOnly = $('#b-head').checked;
+  const out = blank(TW, TH); const od = out.data;
+  const bd = bBase.data, vd = bVar.data;
+  for (let y = 0; y < TH; y++) for (let x = 0; x < TW; x++) {
+    if (headOnly && y >= 100) continue;
+    const i = (y * TW + x) * 4;
+    const bA = bd[i + 3] > 16, vA = vd[i + 3] > 16;
+    let diff = false;
+    if (bA !== vA) diff = vA;            // 片方にしか無い → 差分元側を採用
+    else if (vA && colorDist(bd, i, vd[i], vd[i + 1], vd[i + 2]) > tol) diff = true;
+    if (diff) { od[i] = vd[i]; od[i + 1] = vd[i + 1]; od[i + 2] = vd[i + 2]; od[i + 3] = 255; }
+  }
+  bResult = out;
+  putScaled($('#b-out'), out, 2);
+});
+$('#b-save').addEventListener('click', () => { if (bResult) downloadPNG(bResult, $('#b-name').value); });
+
+// ── C. 合成プレビュー ──────────────────────────────
+const layers = [];
+$('#a-to-layer').addEventListener('click', () => { if (aResult) addLayer(cloneData(aResult), $('#a-name').value); });
+$('#b-to-layer').addEventListener('click', () => { if (bResult) addLayer(cloneData(bResult), $('#b-name').value); });
+$('#c-file').addEventListener('change', async e => {
+  for (const f of e.target.files) {
+    const img = await loadFile(f);
+    addLayer(imageData(img, TW, TH), f.name);
+  }
+});
+$('#c-clear').addEventListener('click', () => { layers.length = 0; renderC(); });
+function addLayer(data, name) { layers.push({ data, name }); renderC(); }
+function renderC() {
+  const out = blank(TW, TH); const od = out.data;
+  for (const L of layers) {
+    const d = L.data.data;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3] > 16) { od[i] = d[i]; od[i + 1] = d[i + 1]; od[i + 2] = d[i + 2]; od[i + 3] = 255; }
+    }
+  }
+  putScaled($('#c-out'), out, 2);
+  $('#c-list').innerHTML = layers.map(L => `<li>${L.name}</li>`).join('');
+}
+// 髪色テスト：最後のレイヤーへ色相・明度変換（基準＝茶髪）
+const HAIR_TARGETS = { 黒:[0,-0.55], 茶:[0,0], 栗:[10,0.08], 金:[18,0.30], 灰:[0,0.18,true], 白:[0,0.42,true], 紫:[-160,0], 緑:[80,-0.05], 青:[-130,-0.05] };
+const colWrap = $('#c-colors');
+for (const name of Object.keys(HAIR_TARGETS)) {
+  const b = document.createElement('button'); b.className = 'ghost'; b.textContent = name;
+  b.addEventListener('click', () => { recolorLast(...HAIR_TARGETS[name]); });
+  colWrap.appendChild(b);
+}
+function recolorLast(hueShift, lightShift, desat) {
+  const L = layers[layers.length - 1];
+  if (!L) return;
+  const d = L.data.data;
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] <= 16) continue;
+    let [h, s, l] = rgb2hsl(d[i], d[i + 1], d[i + 2]);
+    h = (h + hueShift + 360) % 360;
+    if (desat) s *= 0.12;
+    l = Math.min(1, Math.max(0, l + lightShift));
+    const [r, g, b] = hsl2rgb(h, s, l);
+    d[i] = r; d[i + 1] = g; d[i + 2] = b;
+  }
+  renderC();
+}
+function rgb2hsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+  if (mx === mn) return [0, 0, l];
+  const dd = mx - mn;
+  const s = l > 0.5 ? dd / (2 - mx - mn) : dd / (mx + mn);
+  let h;
+  if (mx === r) h = ((g - b) / dd + (g < b ? 6 : 0));
+  else if (mx === g) h = (b - r) / dd + 2;
+  else h = (r - g) / dd + 4;
+  return [h * 60, s, l];
+}
+function hsl2rgb(h, s, l) {
+  h /= 360;
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+  const f = t => {
+    if (t < 0) t += 1; if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  return [Math.round(f(h + 1 / 3) * 255), Math.round(f(h) * 255), Math.round(f(h - 1 / 3) * 255)];
+}
+</script>
+</body>
+</html>
