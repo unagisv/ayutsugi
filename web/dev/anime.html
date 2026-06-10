@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>歩継ぎ アニメ寄りドット試作（案B・40×64）</title>
+<style>
+  body { background:#3a3a3a; color:#eee; font-family:monospace; padding:16px; }
+  .row { display:flex; gap:20px; flex-wrap:wrap; align-items:flex-end; margin-bottom:18px; }
+  .cell { text-align:center; }
+  .cell span { display:block; font-size:11px; margin-top:4px; color:#bbb; }
+  canvas { image-rendering: pixelated; }
+  .light { background:#f0e7cf; } .dark { background:#555; }
+  h2 { font-size:14px; border-bottom:1px solid #666; padding-bottom:4px; }
+</style>
+</head>
+<body>
+<h1 style="font-size:16px">アニメ寄りドット試作 ― 青年期女性・ポニーテール（40×64・4頭身）</h1>
+<div id="out"></div>
+<script>
+// ── 40×64・半身20文字ミラー＋ランパッチ（非対称パーツ用）──────────
+const W = 40, H = 64, HALF = 20;
+function mirror(half) { return half + half.split('').reverse().join(''); }
+
+const PAL = {
+  K:'#4a3328',                 // 輪郭（柔らかい焦茶）
+  S:'#ffe3c8', s:'#f0b894',    // 肌・肌影
+  E:'#33222a',                 // まつげ・目の縁
+  I:'#7a4a98', i:'#a878c8',    // 瞳・瞳の下側（明）
+  W:'#ffffff',                 // ハイライト・白
+  H:'#8a5a2f', h:'#b8854a', D:'#6a4020', // 髪・艶・髪影
+  M:'#d8707a',                 // 口
+  C:'#f2ead8', c:'#d8cab0',    // ニット・影
+  F:'#9a5a40', f:'#7a4430',    // スカート・プリーツ影
+  L:'#ffe3c8', l:'#f0b894',    // 脚
+  T:'#5a4538', t:'#3f2f26',    // 靴
+  B:'#c84b5c',                 // 髪ゴム
+};
+
+// 基本シルエット（左右対称・半身20文字）
+const BASE = [
+  '...............KKKKK',  // r0  頭頂
+  '.............KKHHHHH',  // r1
+  '............KHHHHHHH',  // r2
+  '............KHHHhhhh',  // r3  艶
+  '...........KHHHhhhhh',  // r4
+  '...........KHHHHhhhh',  // r5
+  '...........KHHHHHHHH',  // r6
+  '...........KHHHHHHHH',  // r7  前髪
+  '...........KHHSHHSHH',  // r8  前髪の先（ジグザグ）
+  '...........KHSEEEESS',  // r9  まつげ（目は cols14-17）
+  '...........KHSIWIISS',  // r10 瞳＋ハイライト
+  '...........KHSIIiiSS',  // r11 瞳（下側は明るく）
+  '...........KHSsIIsSS',  // r12 瞳のすぼまり
+  '...........KHSSSSSSS',  // r13
+  '...........KHSSSSSSS',  // r14 頬（口は中央パッチ）
+  '............KHSSSSSS',  // r15 サイドの髪が頬に落ちる
+  '..............KKSSSS',  // r16 あご
+  '.................KSS',  // r17 首
+  '.................KSS',  // r18 首
+  '..............KCCCCC',  // r19 肩のはじまり
+  '...........KKCCCCCCC',  // r20
+  '..........KCCCCCCCCC',  // r21 肩
+  '..........KCCcCCCCCC',  // r22 袖の影（やわらかく）
+  '..........KCCcCCCCCC',  // r23
+  '..........KCCcCCCCCC',  // r24
+  '..........KCCcCCCCCC',  // r25
+  '..........KCCcCCCCCC',  // r26
+  '..........KCCcCCCCCC',  // r27
+  '..........KCCcCCCCCC',  // r28 ウエストへ
+  '..........KSScCCCCCC',  // r29 手
+  '..........KSScCCCCCC',  // r30 手
+  '.............KFFFFFF',  // r31 スカート腰
+  '............KFFFFFFF',  // r32
+  '............KFfFFfFF',  // r33 プリーツ
+  '............KFfFFfFF',  // r34
+  '...........KFFfFFfFF',  // r35
+  '...........KFFfFFfFF',  // r36
+  '...........KFFfFFfFF',  // r37
+  '..........KFFFfFFfFF',  // r38
+  '..........KFFFfFFfFF',  // r39
+  '..........KFFFfFFfFF',  // r40
+  '.........KFFFFfFFfFF',  // r41
+  '.........KFFFFfFFfFF',  // r42
+  '.........Kffffffffff',  // r43 裾の影
+  '.........KKKKKKKKKKK',  // r44 裾線
+  '...............KLLL.',  // r45 脚
+  '...............KLLL.',  // r46
+  '...............KLLL.',  // r47
+  '...............KLLL.',  // r48
+  '...............KLLL.',  // r49
+  '...............KLLL.',  // r50
+  '...............KLLL.',  // r51
+  '...............KlLL.',  // r52
+  '...............KlLL.',  // r53
+  '...............KLLL.',  // r54
+  '...............KLLL.',  // r55
+  '...............KLLL.',  // r56
+  '...............KLLL.',  // r57
+  '...............KLLL.',  // r58
+  '..............KTTTT.',  // r59 靴
+  '..............KTTTT.',  // r60
+  '..............KTTtT.',  // r61
+  '..............KKKKK.',  // r62
+  '....................',  // r63
+];
+
+// 非対称パッチ：行ごとの水平ラン [row, c0, c1, key]
+const PONYTAIL = [
+  [1, 27, 29, 'K'],
+  [2, 27, 31, 'H'], [2, 26, 26, 'K'],
+  [3, 28, 32, 'H'], [3, 27, 27, 'B'],
+  [4, 28, 33, 'h'], [4, 27, 27, 'B'],
+  [5, 29, 34, 'h'],
+  [6, 29, 34, 'H'],
+  [7, 30, 34, 'H'],
+  [8, 30, 34, 'H'],
+  [9, 30, 34, 'D'],
+  [10, 31, 34, 'H'],
+  [11, 31, 34, 'H'],
+  [12, 31, 33, 'D'],
+  [13, 31, 33, 'H'],
+  [14, 30, 32, 'H'],
+  [15, 30, 32, 'D'],
+  [16, 29, 31, 'H'],
+  [17, 29, 30, 'D'],
+  [18, 28, 29, 'H'],
+  [19, 28, 28, 'D'],
+];
+// 口（中央・全体座標）
+const MOUTH = [[14, 19, 20, 'M']];
+// 頬の血色
+const BLUSH = [[13, 14, 15, 's'], [13, 24, 25, 's']];
+
+function buildGrid() {
+  const rows = BASE.map(mirror);
+  const grid = rows.map(r => r.split(''));
+  for (const [r, c0, c1, k] of [...PONYTAIL, ...MOUTH, ...BLUSH]) {
+    for (let c = c0; c <= c1; c++) if (grid[r]) grid[r][c] = k;
+  }
+  return grid;
+}
+
+function draw(grid, scale, bg) {
+  const cv = document.createElement('canvas');
+  cv.width = W * scale; cv.height = H * scale;
+  cv.className = bg;
+  const ctx = cv.getContext('2d');
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const k = grid[y][x];
+    if (!k || k === '.') continue;
+    ctx.fillStyle = PAL[k] ?? '#f0f';
+    ctx.fillRect(x * scale, y * scale, scale, scale);
+  }
+  return cv;
+}
+
+function show(title, items) {
+  const out = document.getElementById('out');
+  const h = document.createElement('h2'); h.textContent = title; out.appendChild(h);
+  const row = document.createElement('div'); row.className = 'row'; out.appendChild(row);
+  for (const it of items) {
+    const cell = document.createElement('div'); cell.className = 'cell';
+    cell.appendChild(it.cv);
+    const sp = document.createElement('span'); sp.textContent = it.label; cell.appendChild(sp);
+    row.appendChild(cell);
+  }
+}
+
+const g = buildGrid();
+show('倍率・背景違い', [
+  { cv: draw(g, 6, 'dark'), label: '×6 暗背景' },
+  { cv: draw(g, 6, 'light'), label: '×6 和紙背景' },
+  { cv: draw(g, 4, 'light'), label: '×4' },
+  { cv: draw(g, 2, 'light'), label: '×2 一覧用' },
+]);
+</script>
+</body>
+</html>
