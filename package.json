@@ -1,0 +1,6 @@
+{
+  "name": "ayutsugi-web-demo",
+  "private": true,
+  "type": "module",
+  "description": "『歩継ぎ』Webデモ。テスト実行: node tests/tests.js"
+}
