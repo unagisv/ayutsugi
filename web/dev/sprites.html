@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>歩継ぎ ドット絵プロトタイプ</title>
+<style>
+  body { background:#3a3a3a; color:#eee; font-family:monospace; padding:16px; }
+  .row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; margin-bottom:18px; }
+  .cell { text-align:center; }
+  .cell span { display:block; font-size:11px; margin-top:4px; color:#bbb; }
+  canvas { image-rendering: pixelated; background:#555; }
+  h2 { font-size:14px; border-bottom:1px solid #666; padding-bottom:4px; }
+</style>
+</head>
+<body>
+<h1 style="font-size:16px">キャラ試作（パーツ合成）</h1>
+<div id="out"></div>
+<script>
+// ── ミニドット絵エンジン：文字グリッド（半分定義→左右ミラー）────────
+// 凡例: .=透明 K=輪郭 H=髪 S=肌 s=肌影 E=目 C=服 c=服影 B=帯/飾り W=襟/白 F=足 G=金飾り
+function mirror(half) { return half + half.split('').reverse().join(''); }
+
+const PAL = {
+  K:'#33241a', S:'#f2cfa4', s:'#dba87e', E:'#2a1c12',
+  W:'#f5efdf', F:'#5a4632', G:'#d9b13f', R:'#d8504a',
+};
+const HAIR_COLORS = { black:'#413a34', brown:'#7a512f', chestnut:'#a06b38', gray:'#b8b0a2', white:'#eae6dc' };
+const OUTFITS = {
+  '質素': { C:'#9c8a66', c:'#7a6b4e', B:'#6b5d44' },
+  '標準': { C:'#48688c', c:'#37516e', B:'#8c3b34' },
+  '立派': { C:'#8c3b34', c:'#6e2c27', B:'#d9b13f' },
+};
+
+// ── 2頭身 16x20 ────────────────────────────────────
+// 頭 rows0-12 ／ 体 rows13-19。髪型＝前髪(r5)とサイド(r6-r11)の差し替え。
+function headRows({hair='short', eyes='normal'}) {
+  const bangs = {
+    short: 'KHHSSSSS',
+    spiky: 'KHSHSHSH',   // ミラーでジグザグ前髪
+    bob:   'KHHSSSSS',
+    long:  'KHHSSSSS',
+    bald:  'KSSSSSSS',
+  }[hair];
+  // サイドの髪が顔の横に何行残るか
+  const sideDepth = { short: 7, spiky: 7, bob: 10, long: 12, bald: -1 }[hair];
+  const top = hair === 'bald'
+    ? ['........', '..KKKKKK', '.KSSSSSS', 'KSSSSSSS', 'KSSSSSSS']
+    : ['..KKKKKK', '.KHHHHHH', '.KHHHHHH', 'KHHHHHHH', 'KHHHHHHH'];
+
+  const eye1 = eyes === 'sad' ? 'S' : 'E';
+  const eye2 = eyes === 'happy' ? 'S' : 'E';
+  const cheek = eyes === 'happy' ? 's' : 'S';
+  const mouth = {
+    normal: '.KSSSSSS',
+    happy:  '.KSSSSKS',   // 口角の上がった笑み
+    sad:    '.KSSSSSK',   // への字
+  }[eyes];
+
+  const rows = [
+    ...top,                       // r0-r4
+    bangs,                        // r5 前髪
+    'KHSSSSSS',                   // r6
+    'KHSS' + eye1 + 'SSS',        // r7 目（上）col4
+    'KHSS' + eye2 + 'SSS',        // r8 目（下）
+    '.KS' + cheek + 'SSSS',       // r9 頬
+    mouth,                        // r10 口もと
+    '..KSSSSS',                   // r11
+    '...KKKKK',                   // r12 あご
+  ];
+  // サイドの髪：r6以降の col1 を H に（bobはcol2も太く）
+  for (let r = 6; r <= Math.min(sideDepth, 11); r++) {
+    rows[r] = rows[r][0] === 'K' ? 'KH' + rows[r].slice(2) : '.H' + rows[r].slice(2);
+    if (hair === 'bob' && r <= 8) rows[r] = rows[r].slice(0, 2) + 'H' + rows[r].slice(3);
+  }
+  return rows;
+}
+
+function adultRows(opts) {
+  const body = [
+    '..KCCCWW',                   // r13 肩・襟
+    '.KCCCCWW',                   // r14
+    '.KSCCCCB',                   // r15 手・帯
+    '..KCCCCC',                   // r16
+    '..KCCCCC',                   // r17
+    '...KFF..',                   // r18 足
+    '...KKK..',                   // r19
+  ];
+  if (opts.hair === 'long') {     // 長髪は肩に掛かる
+    body[0] = '.HKCCCWW';
+    body[1] = '.HCCCCWW';
+  }
+  return [...headRows(opts), ...body].map(mirror);
+}
+
+// 子ども 16x16（頭はそのまま・胴が短い）
+function childRows(opts) {
+  return [...headRows(opts).map(mirror),
+    mirror('..KCCCCC'), mirror('..KSCCCB'), mirror('...KFF..'), mirror('...KKK..')];
+}
+
+// 老人：白髪・ひげ（杖はアクセサリ）
+function elderRows(opts) {
+  const rows = adultRows(opts);
+  rows[10] = mirror('.KSHHHHH');  // 白ひげ（Hを白にする）
+  rows[11] = mirror('..KHHHHH');
+  rows[12] = mirror('...KKKKK');
+  return rows;
+}
+
+// アクセサリ（座標パッチ [row, col, 色キー]）
+const ACCESSORIES = {
+  none: [],
+  glasses: [[6,4,'K'],[7,3,'K'],[7,5,'K'],[8,4,'K'],[6,11,'K'],[7,10,'K'],[7,12,'K'],[8,11,'K'],[7,7,'K'],[7,8,'K']],
+  ribbon: [[0,11,'R'],[0,13,'R'],[1,11,'R'],[1,12,'R'],[1,13,'R'],[2,12,'R']],
+  kanzashi: [[0,12,'G'],[1,13,'G'],[2,14,'G'],[1,12,'G']],
+  hachimaki: [[4,1,'W'],[4,2,'W'],[4,3,'W'],[4,4,'W'],[4,5,'W'],[4,6,'W'],[4,7,'W'],[4,8,'W'],[4,9,'W'],[4,10,'W'],[4,11,'W'],[4,12,'W'],[4,13,'W'],[4,14,'W']],
+  cane: [[12,15,'F'],[13,15,'F'],[14,15,'F'],[15,15,'F'],[16,15,'F'],[17,15,'F'],[18,15,'F'],[11,15,'F'],[11,14,'F']],
+};
+
+function drawSprite(rows, pal, patches, scale) {
+  const h = rows.length, w = rows[0].length;
+  const cv = document.createElement('canvas');
+  cv.width = w * scale; cv.height = h * scale;
+  const ctx = cv.getContext('2d');
+  const grid = rows.map(r => r.split(''));
+  for (const [r, c, k] of patches) if (grid[r]) grid[r][c] = k;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const k = grid[y][x];
+    if (k === '.') continue;
+    ctx.fillStyle = pal[k] ?? '#f0f';
+    ctx.fillRect(x * scale, y * scale, scale, scale);
+  }
+  return cv;
+}
+
+function show(title, items) {
+  const out = document.getElementById('out');
+  const h = document.createElement('h2'); h.textContent = title; out.appendChild(h);
+  const row = document.createElement('div'); row.className = 'row'; out.appendChild(row);
+  for (const it of items) {
+    const cell = document.createElement('div'); cell.className = 'cell';
+    cell.appendChild(it.cv);
+    const sp = document.createElement('span'); sp.textContent = it.label; cell.appendChild(sp);
+    row.appendChild(cell);
+  }
+}
+
+function make(opts) {
+  const pal = { ...PAL, H: HAIR_COLORS[opts.hairColor ?? 'black'], ...OUTFITS[opts.outfit ?? '標準'] };
+  if (opts.age === 'elder') pal.H = HAIR_COLORS.white;
+  const rows = (opts.age === 'child' ? childRows : opts.age === 'elder' ? elderRows : adultRows)(opts);
+  return drawSprite(rows, pal, (opts.acc ?? []).flatMap(a => ACCESSORIES[a]), opts.scale ?? 6);
+}
+
+// ── 表示 ──────────────────────────────────────────
+show('髪型バリエーション（大人・標準服）', [
+  { cv: make({hair:'short'}), label: 'short' },
+  { cv: make({hair:'spiky'}), label: 'spiky' },
+  { cv: make({hair:'bob'}), label: 'bob' },
+  { cv: make({hair:'long'}), label: 'long' },
+  { cv: make({hair:'bald'}), label: 'bald' },
+]);
+show('髪色（遺伝で継承）', [
+  { cv: make({hair:'bob', hairColor:'black'}), label: '黒' },
+  { cv: make({hair:'bob', hairColor:'brown'}), label: '茶' },
+  { cv: make({hair:'bob', hairColor:'chestnut'}), label: '栗' },
+  { cv: make({hair:'bob', hairColor:'gray'}), label: '灰' },
+]);
+show('服装（財産3段階）', [
+  { cv: make({hair:'short', outfit:'質素'}), label: '質素' },
+  { cv: make({hair:'short', outfit:'標準'}), label: '標準' },
+  { cv: make({hair:'short', outfit:'立派'}), label: '立派' },
+]);
+show('アクセサリ', [
+  { cv: make({hair:'short', acc:['glasses']}), label: 'めがね' },
+  { cv: make({hair:'long', acc:['kanzashi']}), label: 'かんざし' },
+  { cv: make({hair:'bob', acc:['ribbon']}), label: 'リボン' },
+  { cv: make({hair:'spiky', acc:['hachimaki']}), label: 'はちまき' },
+]);
+show('人生ステージ', [
+  { cv: make({hair:'short', age:'child', outfit:'質素'}), label: '幼少期' },
+  { cv: make({hair:'short'}), label: '青年〜壮年' },
+  { cv: make({hair:'short', age:'elder', acc:['cane']}), label: '老年期' },
+]);
+show('表情（活力3段階）', [
+  { cv: make({hair:'short', eyes:'normal'}), label: 'ふつう' },
+  { cv: make({hair:'short', eyes:'happy'}), label: 'いきいき' },
+  { cv: make({hair:'short', eyes:'sad'}), label: 'しょんぼり' },
+]);
+</script>
+</body>
+</html>
