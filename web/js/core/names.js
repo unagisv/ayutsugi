@@ -9,6 +9,9 @@ const FEMALE_NAMES = ['花子', '美咲', '葵', '凛', '結衣', 'さくら', '
 export const APPEARANCES = ['面長', '丸顔', '切れ長の目', '大きな瞳', '彫りの深い顔', '柔和な顔立ち'];
 export const PERSONALITIES = ['のんびり', '働き者', '社交的', '慎重', '好奇心旺盛', '芯が強い'];
 
+const NPC_NAMES_M = ['隆', '誠', '勇介', '拓也', '晃', '智也', '啓太', '裕介'];
+const NPC_NAMES_F = ['彩', '麻衣', '遥', '莉子', '紗希', '真由', '志穂', '杏奈'];
+
 function pick(list, rng) {
   return list[Math.floor(rng() * list.length)];
 }
@@ -24,4 +27,8 @@ export function generateName(gender, rng) {
 
 export function generateTrait(kind, rng) {
   return pick(kind === 'appearance' ? APPEARANCES : PERSONALITIES, rng);
+}
+
+export function generateNpcName(gender, rng) {
+  return pick(gender === 'M' ? NPC_NAMES_M : NPC_NAMES_F, rng);
 }
