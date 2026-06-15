@@ -12,7 +12,7 @@ import {
 import {
   applyDailySteps, computeLifespan, stageFor, achievementRate, rateBand, isSick,
 } from './life.js';
-import { generateGender, generateName, generateTrait } from './names.js';
+import { generateGender, generateName, generateTrait, generateNpcName } from './names.js';
 import { EVENTS, pickEvent } from './events.js';
 
 export const SCHEMA_VERSION = 1;
@@ -80,7 +80,7 @@ export function createLeader(rng, nowMs, parent, heirloom) {
 export function createInitialState(rng, nowMs, { familyName, goal, genderedEvents }) {
   const state = {
     schemaVersion: SCHEMA_VERSION,
-    settings: { genderedEvents: !!genderedEvents },
+    settings: { genderedEvents: !!genderedEvents, density: 'rich' },
     clock: { offsetMs: 0 },
     progress: {
       lastJudgedWeek: null,
@@ -179,7 +179,11 @@ function finalizeDay(state, d, log) {
     L.lifespanDays = lifespanDays;
     log.push({ type: 'oldage', lifespanDays });
   }
+  const prevStage = L.stage;
   L.stage = stageFor(L.elapsedDays + 1);
+  if (L.stage !== prevStage) {
+    log.push({ type: 'stageChange', from: prevStage, to: L.stage, dayNum: L.elapsedDays });
+  }
 
   // E13（次代への遺し）：大往生前日のバッチで必発（中核扱い・既存の選択待ちより優先。05 §4-4）
   if (L.lifespanDays !== null && L.elapsedDays === L.lifespanDays - 1) {
@@ -391,14 +395,26 @@ function snapshotLeader(leader, diedAt, extra = {}) {
 // イベントの提示と選択の適用（03 §2.3-4：分岐は選択時点の達成率）
 // ─────────────────────────────────────────────
 
-export function presentEvent(state) {
-  if (!state.pendingEvent) return null;
-  const ev = EVENTS[state.pendingEvent.id];
-  const ctx = {
-    leader: state.dynasty.leader,
+function eventCtx(state, rng) {
+  const L = state.dynasty.leader;
+  const npcGender = L.gender === 'M' ? 'F' : 'M';
+  return {
+    leader: L,
     gendered: state.settings.genderedEvents,
-    variant: state.pendingEvent.variant,
+    variant: state.pendingEvent?.variant,
+    density: state.settings.density ?? 'rich',
+    npcName: generateNpcName(npcGender, rng ?? deps_rng),
   };
+}
+
+let deps_rng = Math.random;
+export function setEventRng(rng) { deps_rng = rng; }
+
+export function presentEvent(state, rng) {
+  if (!state.pendingEvent) return null;
+  if (rng) deps_rng = rng;
+  const ev = EVENTS[state.pendingEvent.id];
+  const ctx = eventCtx(state, rng);
   return {
     id: ev.id,
     name: ev.name,
@@ -407,12 +423,13 @@ export function presentEvent(state) {
   };
 }
 
-export function applyEventChoice(state, choiceIndex) {
+export function applyEventChoice(state, choiceIndex, rng) {
   if (!state.pendingEvent) return null;
   const pe = state.pendingEvent;
   const ev = EVENTS[pe.id];
   const L = state.dynasty.leader;
-  const ctx = { leader: L, gendered: state.settings.genderedEvents, variant: pe.variant };
+  if (rng) deps_rng = rng;
+  const ctx = eventCtx(state, rng);
   const rate = achievementRate(L.totalSteps, L.expectedSteps);
   const band = rateBand(rate);
   const out = ev.resolve(ctx, choiceIndex, band);

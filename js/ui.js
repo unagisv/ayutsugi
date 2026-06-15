@@ -2,12 +2,15 @@
 // ナビゲーションはホーム集約型（04 §1 確定事項1）。コアロジックには触れず game.js を呼ぶだけ。
 import {
   createInitialState, catchUp, inputSteps, weekTotal, presentEvent, applyEventChoice,
-  restart, reserveGoal, exportState, importState,
+  restart, reserveGoal, exportState, importState, setEventRng,
 } from './core/game.js';
 import { weekIdOf, weekDates, formatDateTime, formatDate, dateId, addDaysToId } from './core/time.js';
 import { achievementRate, rateBand, expressionFor, fitnessLevel, outfitFor } from './core/life.js';
 import { GOAL_MIN, GOAL_MAX, GOAL_STEP, GOAL_DEFAULT, DANGER_RATE } from './core/rules.js';
 import { renderAvatar, avatarDescription } from './avatar.js';
+
+const FITNESS_LABELS = ['', '運動不足ぎみ', 'やや運動不足', 'ふつう', '健康的', 'アスリート体型'];
+function fitnessText(level) { return FITNESS_LABELS[level] || 'ふつう'; }
 
 let deps = null;          // { loadState, saveState, clearState, realNow, rng }
 let state = null;
@@ -30,7 +33,9 @@ function save() {
 
 export function startApp(d) {
   deps = d;
+  setEventRng(deps.rng);
   state = deps.loadState();
+  if (state && state.settings.density === undefined) state.settings.density = 'rich';
   $('#header-nav').addEventListener('click', (e) => {
     const nav = e.target.closest('[data-nav]');
     if (nav) navigate(nav.dataset.nav);
@@ -57,6 +62,7 @@ function tick() {
 
 function enqueueLogModals(log) {
   for (const item of log) {
+    if (item.type === 'stageChange') modalQueue.push({ kind: 'stageChange', item });
     if (item.type === 'succession') modalQueue.push({ kind: 'succession', item });
     if (item.type === 'perish') modalQueue.push({ kind: 'perish', item });
     if (item.type === 'oldage') modalQueue.push({ kind: 'oldage', item });
@@ -176,7 +182,7 @@ function renderHome() {
         <div class="avatar-meta">
           <div class="leader-name">${L.name} <span class="expr">${desc.expression}</span></div>
           <div class="stage-line">${L.stage}・${dayNum}日目${L.lifespanDays ? `（寿命 ${L.lifespanDays}日）` : ''}</div>
-          <div class="trait-line">${L.traits.appearance}／${L.traits.personality}・体つきLv${desc.fitLevel}・装い:${desc.tier}</div>
+          <div class="trait-line">${L.traits.appearance}／${L.traits.personality}・${fitnessText(desc.fitLevel)}・装い:${desc.tier}</div>
         </div>
       </div>
       ${state.pendingEvent ? `<button class="event-cta" id="open-event">📖 人生イベントが発生しています</button>` : ''}
@@ -191,10 +197,18 @@ function renderHome() {
       <div class="card progress-card">
         <div class="progress-head">
           <span>今週 ${total.toLocaleString()} / ${goal.toLocaleString()} 歩</span>
-          <span>${total >= goal ? '✅ 達成！' : `あと ${remaining.toLocaleString()} 歩`}</span>
+          <span>${total >= goal ? '達成！' : `あと ${remaining.toLocaleString()} 歩`}</span>
         </div>
         <div class="bar"><div class="bar-fill ${total >= goal ? 'done' : ''}" style="width:${pct}%"></div></div>
-        ${total >= goal ? `<p class="note">今週は達成済み。残りの歩みは当主の人生を豊かにします（存続の確定は日曜24時）。</p>` : ''}
+        ${total >= goal
+          ? `<p class="note">今週は達成済み。残りの歩みは当主の人生を豊かにします（存続の確定は日曜24時）。</p>`
+          : (() => {
+              const daysLeft = 7 - new Date(now()).getDay(); // 日曜=0→残0、月曜=1→残6…
+              const dLeft = daysLeft === 0 ? 1 : daysLeft; // 日曜なら今日中
+              const pace = Math.ceil(remaining / dLeft);
+              return `<p class="note">残り${dLeft === 1 ? '今日' : `${dLeft}日`}、1日あたり約${pace.toLocaleString()}歩ペースで達成</p>`;
+            })()
+        }
         ${state.goal.pendingGoal !== null ? `<p class="note">来週から：${state.goal.pendingGoal.toLocaleString()}歩（予約中）</p>` : ''}
       </div>
       <details class="card stats-card">
@@ -231,7 +245,7 @@ function statBar(label, value) {
 // ─────────────────────────────────────────────
 
 function openEventModal() {
-  const ev = presentEvent(state);
+  const ev = presentEvent(state, deps.rng);
   if (!ev) return;
   const choicesHtml = ev.choices
     ? ev.choices.map((c, i) => `<button class="choice" data-i="${i}">${c}</button>`).join('')
@@ -243,12 +257,12 @@ function openEventModal() {
     (root, close) => {
       root.querySelectorAll('.choice').forEach(btn => btn.addEventListener('click', () => {
         const i = Number(btn.dataset.i);
-        const out = applyEventChoice(state, i < 0 ? null : i);
+        const out = applyEventChoice(state, i < 0 ? null : i, deps.rng);
         save();
         root.innerHTML = `
           <h2>📖 ${out.name}</h2>
           <p class="event-text">${out.text.replace(/\n/g, '<br>')}</p>
-          <p class="band-line">${out.band === '高' ? '✨ よく歩いた日々が実を結んだ（高）' : out.band === '中' ? '🙂 堅実な歩み（中）' : '🍵 控えめな歩み（低）'}</p>
+          <p class="band-line">${out.band === '高' ? '✨ よく歩いた日々が、良い結果につながった。' : out.band === '中' ? '堅実な歩みが、着実に実を結んでいる。' : '歩みは控えめだったが、それもまた人生。'}</p>
           <button class="primary" id="ev-close">とじる</button>`;
         root.querySelector('#ev-close').addEventListener('click', () => { close(); render(); pumpModals(); });
       }));
@@ -266,7 +280,25 @@ function pumpModals() {
     // 演出が終わってイベントが待っていれば導線を見せる（自動では開かない）
     return;
   }
-  if (next.kind === 'oldage') {
+  if (next.kind === 'stageChange') {
+    const msgs = {
+      '学生期': ['📚 学生期', '当主は学びの季節を迎えた。\n世界が広がり、新しい出会いが待っている。'],
+      '青年期': ['🌸 青年期', '当主は大人への一歩を踏み出した。\n自分の道を切り拓くときが来た。'],
+      '壮年期': ['🏯 壮年期', '当主は人生の盛りを迎えた。\n積み重ねた経験が実を結ぶとき。'],
+      '老年期': null, // 老年期は専用モーダルがある
+    };
+    const msg = msgs[next.item.to];
+    if (msg) {
+      showModal(`
+        <h2>${msg[0]}</h2>
+        <p class="event-text">${msg[1].replace(/\n/g, '<br>')}</p>
+        <button class="primary" id="m-ok">つづける</button>`,
+        (root, close) => root.querySelector('#m-ok').addEventListener('click', () => { close(); pumpModals(); }));
+    } else {
+      pumpModals();
+    }
+    return;
+  } else if (next.kind === 'oldage') {
     showModal(`
       <h2>🍂 老年期</h2>
       <p class="event-text">当主は老年期を迎えた。<br>これまでの歩みから、天寿は <strong>${next.item.lifespanDays}日</strong> と定まった。</p>
@@ -275,9 +307,15 @@ function pumpModals() {
   } else if (next.kind === 'succession') {
     const r = next.item.record;
     const h = next.item.heirloom;
+    const eventsHtml = (r.eventLog ?? []).length > 0
+      ? `<div class="life-review"><p class="review-header">― ${r.name}の歩み ―</p><ul class="review-list">${
+          r.eventLog.map(e => `<li><strong>${e.name}</strong><br><span class="review-text">${e.text.split('\n')[0]}</span></li>`).join('')
+        }</ul></div>`
+      : '';
     showModal(`
       <h2>🕊 大往生</h2>
-      <p class="event-text">${r.name}は天寿を全うした。<br>${r.elapsedDays}日の一生だった。家系図に名が刻まれる。</p>
+      <p class="event-text">${r.name}は天寿を全うした。<br>${r.elapsedDays}日の一生だった。</p>
+      ${eventsHtml}
       <p class="event-text">家宝『${h.label}』（${h.rank}）が次代へ遺された。</p>
       <p class="event-text">${state.dynasty.familyName}家 ${next.item.generation}代目「${next.item.newLeader}」が当主となる。</p>
       <button class="primary" id="m-ok">次の代へ</button>`,
@@ -346,7 +384,7 @@ function renderPerished() {
 // ─────────────────────────────────────────────
 
 function leaderDigest(r, isCurrent = false) {
-  const events = (r.eventLog ?? []).map(e => `<li><span class="ev-band ev-${e.band}">${e.band}</span> <strong>${e.name}</strong>：${e.text.split('\n')[0]}</li>`).join('');
+  const events = (r.eventLog ?? []).map(e => `<li><strong>${e.name}</strong>：${e.text.split('\n')[0]}</li>`).join('');
   const heirloom = r.heirloomLeft ? `<p>遺した家宝：『${r.heirloomLeft.label}』（${r.heirloomLeft.rank}・次代の${{ health: '健康', charm: '人望', wealth: '財産' }[r.heirloomLeft.targetStat]}+${r.heirloomLeft.bonus}）</p>` : '';
   const inherited = r.inheritedHeirloom ? `<p>受け継いだ家宝：『${r.inheritedHeirloom.label}』（${r.inheritedHeirloom.rank}）</p>` : '';
   const flags = [];
@@ -540,6 +578,11 @@ function toggleDebug() {
         <button id="dbg-s2">今日に＋2,000歩</button>
         <button id="dbg-s10">今日に＋10,000歩</button>
       </span>
+      <p class="note" style="margin-top:8px">物語の濃度：<strong id="dbg-density-label">${state?.settings.density === 'rich' ? '濃い（rich）' : 'あっさり（simple）'}</strong></p>
+      <span class="steps-row">
+        <button id="dbg-density-simple">あっさり</button>
+        <button id="dbg-density-rich">濃い</button>
+      </span>
       <button class="danger" id="dbg-reset">全リセット</button>
     </div>`;
   const advance = (days) => {
@@ -557,10 +600,19 @@ function toggleDebug() {
     save();
     render();
   };
+  const setDensity = (d) => {
+    if (!state) return;
+    state.settings.density = d;
+    save();
+    const lbl = $('#dbg-density-label');
+    if (lbl) lbl.textContent = d === 'rich' ? '濃い（rich）' : 'あっさり（simple）';
+  };
   $('#dbg-day').addEventListener('click', () => advance(1));
   $('#dbg-week').addEventListener('click', () => advance(7));
   $('#dbg-s2').addEventListener('click', () => addSteps(2000));
   $('#dbg-s10').addEventListener('click', () => addSteps(10000));
+  $('#dbg-density-simple').addEventListener('click', () => setDensity('simple'));
+  $('#dbg-density-rich').addEventListener('click', () => setDensity('rich'));
   $('#dbg-reset').addEventListener('click', () => {
     if (!confirm('すべてのデータを消去します。よろしいですか？')) return;
     deps.clearState();
