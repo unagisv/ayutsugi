@@ -7,6 +7,7 @@ import {
 import { weekIdOf, weekDates, formatDateTime, formatDate, dateId, addDaysToId } from './core/time.js';
 import { achievementRate, rateBand, expressionFor, fitnessLevel, outfitFor } from './core/life.js';
 import { GOAL_MIN, GOAL_MAX, GOAL_STEP, GOAL_DEFAULT, DANGER_RATE } from './core/rules.js';
+import { renderAvatar, avatarDescription } from './avatar.js';
 
 let deps = null;          // { loadState, saveState, clearState, realNow, rng }
 let state = null;
@@ -144,19 +145,9 @@ function renderOnboarding() {
 // ホーム（04 §3.1：第一視認領域＝当主ビジュアル・今日の歩数・週間進捗）
 // ─────────────────────────────────────────────
 
-function avatarEmoji(leader) {
-  const m = leader.gender === 'M';
-  switch (leader.stage) {
-    case '幼少期': return m ? '👦' : '👧';
-    case '学生期': return m ? '👨‍🎓' : '👩‍🎓';
-    case '青年期': return m ? '👨' : '👩';
-    case '壮年期': return m ? '👨‍💼' : '👩‍💼';
-    default: return m ? '👴' : '👵';
-  }
-}
-
-function expressionEmoji(expr) {
-  return { 'いきいき': '😊', 'ふつう': '🙂', 'しょんぼり': '😞' }[expr];
+function insertAvatar(container, leader, scale) {
+  const cv = renderAvatar(leader, scale);
+  container.appendChild(cv);
 }
 
 function renderHome() {
@@ -169,24 +160,23 @@ function renderHome() {
   const pct = Math.min(100, Math.round(total / goal * 100));
   const today = dateId(now());
   const todaySteps = state.days[today]?.steps;
-  const expr = expressionFor(L.stats.vitality);
+  const desc = avatarDescription(L);
   const rate = achievementRate(L.totalSteps, L.expectedSteps);
   const isGrace = wid === state.progress.graceWeek;
   const dow = new Date(now()).getDay(); // 0=日曜
   const danger = !isGrace && dow === 0 && total < goal * DANGER_RATE;
   const dayNum = L.elapsedDays + 1;
-  const outfit = outfitFor(L.stats.wealth);
 
   $('#screen').innerHTML = `
     <div class="home">
       ${danger ? `<div class="banner danger">⚠ 危険水域：今日中（日曜24時まで）にあと${remaining.toLocaleString()}歩。未達なら${state.dynasty.familyName}家は途絶えます。</div>` : ''}
       ${isGrace ? `<div class="banner grace">🌱 最初の週はお試し期間です（滅亡しません）。来週の月曜から本番がはじまります。</div>` : ''}
-      <div class="avatar-block outfit-${outfit}">
-        <div class="avatar">${avatarEmoji(L)}</div>
+      <div class="avatar-block outfit-${desc.tier}">
+        <div class="avatar" id="home-avatar"></div>
         <div class="avatar-meta">
-          <div class="leader-name">${L.name} <span class="expr">${expressionEmoji(expr)} ${expr}</span></div>
+          <div class="leader-name">${L.name} <span class="expr">${desc.expression}</span></div>
           <div class="stage-line">${L.stage}・${dayNum}日目${L.lifespanDays ? `（寿命 ${L.lifespanDays}日）` : ''}</div>
-          <div class="trait-line">${L.traits.appearance}／${L.traits.personality}・体つきLv${fitnessLevel(L.stats.health, L.totalSteps)}・装い:${outfit}</div>
+          <div class="trait-line">${L.traits.appearance}／${L.traits.personality}・体つきLv${desc.fitLevel}・装い:${desc.tier}</div>
         </div>
       </div>
       ${state.pendingEvent ? `<button class="event-cta" id="open-event">📖 人生イベントが発生しています</button>` : ''}
@@ -217,6 +207,8 @@ function renderHome() {
         <p class="note">基準は「週間目標÷7」。目標より多く歩いた日は人生が好転します。</p>
       </details>
     </div>`;
+
+  insertAvatar($('#home-avatar'), L, 5);
 
   $('#steps-save').addEventListener('click', () => {
     const v = Number($('#steps-input').value);
@@ -372,22 +364,29 @@ function renderFamily() {
   const dyn = state.dynasty;
   const rows = dyn.pastLeaders.map((r, i) => `
     <details class="card leader-row">
-      <summary>${i + 1}代目 ${r.name}（${r.gender === 'M' ? '男' : '女'}）🕊</summary>
+      <summary><span class="leader-avatar" data-past="${i}"></span>${i + 1}代目 ${r.name}（${r.gender === 'M' ? '男' : '女'}）🕊</summary>
       ${leaderDigest(r)}
     </details>`).join('');
   const L = dyn.leader;
   const cur = `
     <details class="card leader-row current" open>
-      <summary>${dyn.generation}代目 ${L.name}（${L.gender === 'M' ? '男' : '女'}）★当代</summary>
+      <summary><span class="leader-avatar" data-current></span>${dyn.generation}代目 ${L.name}（${L.gender === 'M' ? '男' : '女'}）★当代</summary>
       ${leaderDigest({ ...L, lifetimeRate: achievementRate(L.totalSteps, L.expectedSteps) }, true)}
       <button class="ghost" id="rename-btn">当主の名を改める</button>
     </details>`;
   $('#screen').innerHTML = `
     <div class="family">
-      <h2>🌳 ${dyn.familyName}家 家系図</h2>
+      <h2>${dyn.familyName}家 家系図</h2>
       <p class="note">創始：${formatDate(dyn.foundedAt)}</p>
       ${rows}${cur}
     </div>`;
+  // 家系図のミニアバターを挿入
+  dyn.pastLeaders.forEach((r, i) => {
+    const el = document.querySelector(`[data-past="${i}"]`);
+    if (el) insertAvatar(el, r, 2);
+  });
+  const curEl = document.querySelector('[data-current]');
+  if (curEl) insertAvatar(curEl, L, 2);
   $('#rename-btn')?.addEventListener('click', () => {
     const name = prompt('新しい名前', L.name);
     if (name && name.trim()) { L.name = name.trim(); save(); render(); }
