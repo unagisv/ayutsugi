@@ -5,12 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>歩継ぎ（あゆつぎ）</title>
   <meta name="description" content="あなたが歩いた分だけ、一族の物語が続いていく。">
-  <meta name="theme-color" content="#2b2118">
+  <meta name="theme-color" content="#443726">
   <!-- ホーム画面に追加（最低限のPWA対応・05 §5-5） -->
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="歩継ぎ">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -18,10 +21,10 @@
     <header id="header" hidden>
       <div id="header-title"></div>
       <nav id="header-nav">
-        <button data-nav="home" title="ホーム">🏠</button>
-        <button data-nav="family" title="家系図">🌳</button>
-        <button data-nav="history" title="歴史書">📜</button>
-        <button data-nav="settings" title="目標設定">⚙️</button>
+        <button data-nav="home">家</button>
+        <button data-nav="family">系図</button>
+        <button data-nav="history">歴史</button>
+        <button data-nav="settings">設定</button>
       </nav>
     </header>
     <main id="screen"></main>
