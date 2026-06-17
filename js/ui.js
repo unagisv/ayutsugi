@@ -7,7 +7,7 @@ import {
 import { weekIdOf, weekDates, formatDateTime, formatDate, dateId, addDaysToId } from './core/time.js';
 import { achievementRate, rateBand, expressionFor, fitnessLevel, outfitFor } from './core/life.js';
 import { GOAL_MIN, GOAL_MAX, GOAL_STEP, GOAL_DEFAULT, DANGER_RATE } from './core/rules.js';
-import { renderAvatar, avatarDescription } from './avatar.js';
+import { renderAvatar, avatarDescription, preloadSprites } from './avatar.js';
 
 const FITNESS_LABELS = ['', '運動不足ぎみ', 'やや運動不足', 'ふつう', '健康的', 'アスリート体型'];
 function fitnessText(level) { return FITNESS_LABELS[level] || 'ふつう'; }
@@ -42,11 +42,13 @@ export function startApp(d) {
   });
   $('#dev-toggle').addEventListener('click', toggleDebug);
 
-  if (!state) {
-    renderOnboarding();
-  } else {
-    tick();
-  }
+  preloadSprites().then(() => {
+    if (!state) {
+      renderOnboarding();
+    } else {
+      tick();
+    }
+  });
   // 実時間の経過（日付またぎ）を拾う（05 §5-2）
   setInterval(() => { if (state) tick(); }, 60 * 1000);
 }
